@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy -}}
+{{/*
+  Standard Kubernetes NetworkPolicy equivalents of the upstream Cilium policies in
+  k8s-gitops/manifests/tenants/gatana/base/network-policy.yaml.
+
+  Two policies are rendered:
+    1. workloads-isolation (workloadNamespace)
+       - Ingress: only from the main release namespace (+ GKE Managed Prometheus if prometheusMetrics.gcpCloudMonitoring.enable).
+       - Egress:  kube-dns + internet only (no cluster-internal traffic).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-workloads-isolation
+  namespace: {{ .Values.workloadNamespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress only from the main namespace (orchestration).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    {{- if .Values.prometheusMetrics.gcpCloudMonitoring.enable }}
+    # Allow GKE Managed Prometheus collectors to scrape workload metrics.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gmp-system
+    {{- end }}
+  egress:
+    # Allow DNS resolution (kube-dns).
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    # Allow egress to the internet only — block all cluster-internal traffic.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range $np.internalCidrs }}
+              - {{ . | quote }}
+              {{- end }}
+{{- end }}

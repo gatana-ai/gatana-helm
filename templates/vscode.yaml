@@ -1,0 +1,66 @@
+{{- if .Values.vscode.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-vscode
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: vscode
+spec:
+  replicas: {{ .Values.vscode.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: vscode
+  template:
+    metadata:
+      labels:
+{{ include "gatana.podLabels" . | indent 8 }}
+        app.kubernetes.io/component: vscode
+    spec:
+      {{- include "gatana.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: run,   emptyDir: {} }
+        - { name: tmp,   emptyDir: {} }
+      containers:
+        - name: nginx
+          image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "vscode") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          ports: [{ containerPort: 8080, name: http }]
+          volumeMounts:
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run,   mountPath: /var/run }
+            - { name: tmp,   mountPath: /tmp }
+          resources:
+            {{- toYaml .Values.vscode.resources | nindent 12 }}
+          livenessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-vscode
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: vscode
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: vscode
+  ports: [{ name: http, port: 80, targetPort: 8080 }]
+  type: ClusterIP
+{{- end }}

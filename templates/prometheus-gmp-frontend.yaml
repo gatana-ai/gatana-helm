@@ -1,0 +1,100 @@
+{{- if .Values.prometheusMetrics.gcpCloudMonitoring.enable }}
+{{- $projectId := required "gcp.projectId is required when prometheusMetrics.gcpCloudMonitoring.enable=true" .Values.gcp.projectId -}}
+{{- $gmp := .Values.prometheusMetrics.gcpCloudMonitoring -}}
+{{/*
+  ServiceAccount used by the GMP query frontend. When a GCP service account
+  is provided via gkeServiceAccountName, the iam.gke.io/gcp-service-account
+  annotation enables GKE-native Workload Identity binding.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $gmp.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+  {{- if $gmp.gkeServiceAccountName }}
+  annotations:
+    iam.gke.io/gcp-service-account: {{ $gmp.gkeServiceAccountName | quote }}
+  {{- end }}
+---
+{{/*
+  Google Managed Prometheus query frontend. Proxies PromQL queries to GCP
+  Cloud Monitoring's Managed Service for Prometheus. The backend points
+  PROMETHEUS_URL at this Service when enabled.
+  Source: https://github.com/GoogleCloudPlatform/prometheus-engine
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gmp-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gmp-frontend
+  template:
+    metadata:
+      labels:
+{{ include "gatana.podLabels" . | indent 8 }}
+        app.kubernetes.io/component: gmp-frontend
+    spec:
+      serviceAccountName: {{ $gmp.serviceAccountName }}
+      automountServiceAccountToken: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [arm64, amd64]
+                  - key: kubernetes.io/os
+                    operator: In
+                    values: [linux]
+      containers:
+        - name: frontend
+          image: gke.gcr.io/prometheus-engine/frontend:v0.18.0-gke.2
+          args:
+            - "--web.listen-address=:9090"
+            - "--query.project-id={{ $projectId }}"
+          ports:
+            - name: web
+              containerPort: 9090
+          readinessProbe:
+            httpGet: { path: /-/ready, port: web }
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: web }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [all] }
+            privileged: false
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gmp-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gmp-frontend
+  ports:
+    - name: web
+      port: 9090
+      targetPort: web
+{{- end }}

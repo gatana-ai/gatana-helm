@@ -1,0 +1,313 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+{{ include "gatana.podLabels" . | indent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.backend.name }}
+      {{- include "gatana.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if eq .Values.serviceAccount.backend.gkeAuthMethod "workload-identity" }}
+        - name: gcp-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ (fromJson (required "serviceAccount.backend.wif.credentialsConfig is required when gkeAuthMethod=workload-identity" .Values.serviceAccount.backend.wif.credentialsConfig)).audience | quote }}
+                  expirationSeconds: 3600
+                  path: token
+        - name: gcp-credential-configuration
+          configMap:
+            name: {{ printf "%s-backend-gcp-configuration" .Release.Name }}
+        {{- else if eq .Values.serviceAccount.backend.gkeAuthMethod "static-json" }}
+        - name: gcp-credentials
+          secret:
+            secretName: {{ default (printf "%s-backend-gcp-credentials" .Release.Name) .Values.serviceAccount.backend.staticJson.credentialsSecret }}
+        {{- end }}
+        {{- with .Values.backend.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      initContainers:
+        - name: db-migration
+          image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "dbMigrations") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          env:
+            - name: PGHOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgres.database | quote }}
+            - name: PGUSER
+              value: {{ .Values.postgres.user | quote }}
+            - name: PGSSLMODE
+              {{- if and .Values.postgres.useSsl .Values.postgres.sslCa }}
+              value: {{ ternary "verify-full" "verify-ca" .Values.postgres.verifyHost | quote }}
+              {{- else if .Values.postgres.useSsl }}
+              value: "require"
+              {{- else }}
+              value: "disable"
+              {{- end }}
+            {{- if .Values.postgres.sslCa }}
+            - name: POSTGRES_CA
+              value: {{ .Values.postgres.sslCa | quote }}
+            {{- end }}
+            - name: PGSCHEMA
+              value: "public"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.postgres.existingSecret }}
+                  name: {{ .Values.postgres.existingSecret }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-secrets
+                  {{- end }}
+                  key: {{ if .Values.postgres.existingSecret }}password{{ else }}postgresPassword{{ end }}
+          resources:
+            requests: { memory: "64Mi", cpu: "50m" }
+            limits:   { memory: "256Mi", cpu: "500m" }
+      containers:
+        - name: api
+          image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "backend") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          ports:
+            - containerPort: 3500
+              name: http
+            - containerPort: 9100
+              name: metrics
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq .Values.serviceAccount.backend.gkeAuthMethod "workload-identity" }}
+            - name: gcp-token
+              mountPath: /var/run/service-account
+              readOnly: true
+            - name: gcp-credential-configuration
+              mountPath: /etc/workload-identity
+              readOnly: true
+            {{- else if eq .Values.serviceAccount.backend.gkeAuthMethod "static-json" }}
+            - name: gcp-credentials
+              mountPath: /etc/gcp-credentials
+              readOnly: true
+            {{- end }}
+            {{- with .Values.backend.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: PORT
+              value: "3500"
+            - name: METRICS_PORT
+              value: "9100"
+            - name: ENVIRONMENT
+              value: {{ .Values.global.env | quote }}
+            - name: DEPLOYMENT_MODE
+              value: "onpremise"
+            {{- if eq .Values.serviceAccount.backend.gkeAuthMethod "workload-identity" }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/workload-identity/credential-configuration.json
+            {{- else if eq .Values.serviceAccount.backend.gkeAuthMethod "static-json" }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/gcp-credentials/credentials.json
+            {{- end }}
+            - name: BASE_DOMAIN
+              value: {{ .Values.global.baseDomain | quote }}
+            - name: FALLBACK_TENANT
+              value: {{ .Values.global.tenantId | quote }}
+            - name: KMS_PROVIDER
+              value: {{ .Values.kms.provider | quote }}
+            {{- if .Values.kms.gcpKeyId }}
+            - name: CUSTOMER_DATA_KMS_KEY_ID
+              value: {{ .Values.kms.gcpKeyId | quote }}
+            {{- end }}
+            - name: POSTGRES_HOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: POSTGRES_DATABASE
+              value: {{ .Values.postgres.database | quote }}
+            - name: POSTGRES_USERNAME
+              value: {{ .Values.postgres.user | quote }}
+            - name: POSTGRES_USE_SSL
+              value: {{ .Values.postgres.useSsl | quote }}
+            - name: POSTGRES_SSL_VERIFY_HOST
+              value: {{ .Values.postgres.verifyHost | quote }}
+            {{- if .Values.postgres.sslCa }}
+            - name: POSTGRES_CA
+              value: {{ .Values.postgres.sslCa | quote }}
+            {{- end }}
+            {{- include "gatana.postgresPasswordEnv" . | nindent 12 }}
+            - name: WORKLOAD_NAMESPACE
+              value: {{ .Values.workloadNamespace | quote }}
+            - name: WORKLOAD_KSA_NAME
+              value: {{ .Values.serviceAccount.workloads.name | quote }}
+            - name: WORKLOAD_CREDENTIAL_METHOD
+              value: {{ .Values.serviceAccount.workloads.gkeAuthMethod | quote }}
+            {{- if eq .Values.serviceAccount.workloads.gkeAuthMethod "static-json" }}
+            - name: WORKLOAD_STATIC_JSON_SECRET_NAME
+              value: {{ default (printf "%s-workload-gcp-credentials" .Release.Name) .Values.serviceAccount.workloads.staticJson.credentialsSecret | quote }}
+            {{- end }}
+            {{- if eq .Values.serviceAccount.workloads.gkeAuthMethod "workload-identity" }}
+            - name: GCP_WORKLOAD_AUDIENCE
+              value: {{ (fromJson (required "serviceAccount.workloads.wif.credentialsConfig is required when gkeAuthMethod=workload-identity" .Values.serviceAccount.workloads.wif.credentialsConfig)).audience | quote }}
+            {{- end }}
+            {{- if .Values.imagePullSecret }}
+            - name: K8S_IMAGE_PULL_SECRET
+              value: {{ .Values.imagePullSecret | quote }}
+            {{- end }}
+            {{- if .Values.workloads.runtimeClassName }}
+            - name: WORKLOAD_RUNTIME_CLASS_NAME
+              value: {{ .Values.workloads.runtimeClassName | quote }}
+            {{- end }}
+            {{- if .Values.workloads.nodeAffinityLabel }}
+            - name: WORKLOAD_NODE_AFFINITY_LABEL
+              value: {{ .Values.workloads.nodeAffinityLabel | quote }}
+            {{- end }}
+            {{- if eq .Values.workloads.enableStopIdleServers false }}
+            - name: ENABLE_STOP_IDLE_SERVERS
+              value: "false"
+            {{- end }}
+            {{- if .Values.gcp.projectId }}
+            - name: GOOGLE_CLOUD_PROJECT
+              value: {{ .Values.gcp.projectId | quote }}
+            {{- end }}
+            - name: WORKLOAD_EXECUTABLE_APP_IMAGE
+              value: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "mcpServerProxy") }}
+            - name: WORKLOAD_RUNNABLE_CODE_IMAGE
+              value: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "hostedMcpServerNodeJs") }}
+            - name: FETCH_SERVICE_URL
+              value: "http://{{ .Release.Name }}-web-fetcher.{{ .Values.workloadNamespace }}.svc.cluster.local"
+            {{- if .Values.embeddingService.enabled }}
+            - name: EMBEDDING_SERVICE_URL
+              value: "http://{{ .Release.Name }}-embedding-service.{{ .Release.Namespace }}.svc.cluster.local"
+            {{- end }}
+            - name: FILES_STORAGE_BUCKET
+              value: {{ .Values.storage.filesBucket | quote }}
+            - name: FUNCTIONS_STORAGE_BUCKET
+              value: {{ .Values.storage.functionsBucket | quote }}
+            - name: EMAIL_PROVIDER
+              value: {{ .Values.email.provider | quote }}
+            {{- if eq .Values.email.provider "smtp" }}
+            - name: SMTP_HOST
+              value: {{ .Values.email.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.email.smtp.port | quote }}
+            - name: SMTP_SECURE
+              value: {{ .Values.email.smtp.secure | quote }}
+            - name: SMTP_USER
+              value: {{ .Values.email.smtp.user | quote }}
+            {{- if .Values.email.from }}
+            - name: SMTP_FROM
+              value: {{ .Values.email.from | quote }}
+            {{- end }}
+            {{- if .Values.email.smtp.passwordSecret }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.email.smtp.passwordSecret | quote }}
+                  key: {{ required "email.smtp.passwordSecretKey is required when email.smtp.passwordSecret is set" .Values.email.smtp.passwordSecretKey | quote }}
+            {{- else if .Values.email.smtp.password }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: smtpPassword
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.email.provider "ses" }}
+            - name: SES_REGION
+              value: {{ .Values.email.ses.region | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.email.ses.awsAccessKeyId | quote }}
+            {{- if .Values.email.ses.awsSecretAccessKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: sesSecretAccessKey
+            {{- end }}
+            {{- end }}
+            {{- if .Values.licenseKey }}
+            - name: LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: licenseKey
+            {{- end }}
+            {{- if .Values.prometheusMetrics.enabled }}
+            - name: PROMETHEUS_METRICS_ENABLED
+              value: "true"
+            - name: PROMETHEUS_URL
+              {{- if .Values.prometheusMetrics.gcpCloudMonitoring.enable }}
+              value: "http://{{ .Release.Name }}-gmp-frontend.{{ .Release.Namespace }}.svc.cluster.local:9090"
+              {{- else }}
+              value: {{ .Values.prometheusMetrics.prometheusUrl | quote }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /api/v1/health, port: 3500 }
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: 3500 }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: 3500 }
+            periodSeconds: 30
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3500
+  type: ClusterIP

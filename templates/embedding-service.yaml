@@ -1,0 +1,118 @@
+{{- if .Values.embeddingService.enabled -}}
+{{- if .Values.embeddingService.persistence.enabled }}
+---
+# Standalone PVC for the HF model cache. ReadWriteOnce — works with standard
+# GKE Persistent Disks (standard-rwo / premium-rwo). The Deployment uses
+# strategy: Recreate so the old pod fully releases the PD before the new one
+# tries to attach (avoids the classic Deployment+RWO deadlock).
+#
+# helm.sh/resource-policy: keep ensures the PVC (and the cached model on it)
+# survives `helm uninstall`. Delete it manually if you really want it gone.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-embedding-service-models
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: embedding-service
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- if .Values.embeddingService.persistence.storageClassName }}
+  storageClassName: {{ .Values.embeddingService.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.embeddingService.persistence.size | quote }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-embedding-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: embedding-service
+spec:
+  replicas: {{ .Values.embeddingService.replicas }}
+  # Recreate (not RollingUpdate) is required when the pod mounts a RWO PVC.
+  # RollingUpdate would try to start the new pod before terminating the old
+  # one, and the new pod would be stuck Pending forever waiting for the PD
+  # to detach. Recreate kills the old pod first, then starts the new one.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: embedding-service
+  template:
+    metadata:
+      labels:
+{{ include "gatana.podLabels" . | indent 8 }}
+        app.kubernetes.io/component: embedding-service
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- include "gatana.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsNonRoot: true
+        fsGroup: 1000
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        {{- if .Values.embeddingService.persistence.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-embedding-service-models
+        {{- else }}
+        - { name: models, emptyDir: {} }
+        {{- end }}
+      containers:
+        - name: embedder
+          image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "embeddingService") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          ports: [{ containerPort: 8080, name: http }]
+          env:
+            - name: HF_HOME
+              value: "/app/models"
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: models, mountPath: /app/models }
+          resources:
+            {{- toYaml .Values.embeddingService.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-embedding-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: embedding-service
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: embedding-service
+  ports: [{ name: http, port: 80, targetPort: 8080 }]
+  type: ClusterIP
+{{- end }}

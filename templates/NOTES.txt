@@ -1,0 +1,18 @@
+Gatana {{ .Chart.AppVersion }} installed in namespace "{{ .Release.Namespace }}".
+
+╭──────────────────────────────────────────────────────────────────────────╮
+│ NEXT STEPS                                                               │
+╰──────────────────────────────────────────────────────────────────────────╯
+
+1. Verify pods are running:
+
+     kubectl -n {{ .Release.Namespace }} get pods
+
+2. Setup routing to Gatana (nginx gateway/K8s Gateway HTTP Route resourc)
+
+3. Create tenant
+   Open https://{{ .Values.global.baseDomain }}/signup and complete the sign-up
+   form. The tenant slug you choose becomes your subdomain
+   (`<tenantId>.{{ .Values.global.baseDomain }}`).
+
+4. Sign in:  https://{{ .Values.global.tenantId }}.{{ .Values.global.baseDomain }}/

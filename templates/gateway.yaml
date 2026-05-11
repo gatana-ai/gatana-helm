@@ -1,0 +1,272 @@
+{{/*
+  Gateway: nginx reverse-proxy that fronts the backend, frontend (and docs).
+  Always deployed. The chart's Ingress points at this Service for path-based
+  routing, so on-prem operators only need a single LB target.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gateway
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        # WebSocket support: conditionally set Connection header
+        map $http_upgrade $connection_upgrade {
+            default upgrade;
+            ''      '';
+        }
+
+        # Temp paths for unprivileged nginx
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+
+        access_log /dev/stdout main;
+        sendfile on;
+        keepalive_timeout 65;
+        client_max_body_size {{ .Values.gateway.clientMaxBodySize | default "50m" }};
+
+        # Generous proxy buffers to avoid "upstream sent too big header"
+        proxy_buffer_size        32k;
+        proxy_buffers            8 32k;
+        proxy_busy_buffers_size  64k;
+
+        # Large incoming headers / cookie explosion
+        client_header_buffer_size    8k;
+        large_client_header_buffers  8 32k;
+
+        upstream backend {
+            server {{ .Release.Name }}-backend:80;
+            keepalive 32;
+        }
+
+        upstream frontend {
+            server {{ .Release.Name }}-frontend:80;
+            keepalive 16;
+        }
+
+        {{- if .Values.docs.enabled }}
+        upstream docs {
+            server {{ .Release.Name }}-docs:80;
+            keepalive 8;
+        }
+        {{- end }}
+
+        {{- if .Values.vscode.enabled }}
+        upstream vscode {
+            server {{ .Release.Name }}-vscode:80;
+            keepalive 8;
+        }
+        {{- end }}
+
+        {{- if .Values.docs.enabled }}
+        # Docs site — matched by Host: docs.*
+        server {
+            listen 8080;
+            server_name ~^docs\.;
+
+            location / {
+                proxy_pass http://docs;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+            }
+
+            location = /healthz {
+                access_log off;
+                return 200 'ok';
+                add_header Content-Type text/plain;
+            }
+        }
+        {{- end }}
+
+        server {
+            listen 8080 default_server;
+            server_name _;
+
+            # Backend API routes
+            location /api/ {
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection $connection_upgrade;
+                proxy_buffering off;
+                proxy_read_timeout 300s;
+            }
+
+            # OAuth routes
+            location /oauth/ {
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+            }
+
+            # MCP endpoint (SSE/streaming)
+            location /mcp {
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+                proxy_buffering off;
+                proxy_cache off;
+                proxy_read_timeout 86400s;
+                chunked_transfer_encoding on;
+            }
+
+            # Well-known routes (OIDC discovery, etc.)
+            location /.well-known/ {
+                proxy_pass http://backend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+            }
+
+            # Gateway health check (returns 200 directly, doesn't depend on backend)
+            location = /healthz {
+                access_log off;
+                return 200 'ok';
+                add_header Content-Type text/plain;
+            }
+
+            # Frontend (default - all other routes)
+            location / {
+                proxy_pass http://frontend;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+            }
+            {{- if .Values.vscode.enabled }}
+            # VS Code
+            location /vscode/ {
+                proxy_pass http://vscode/;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+                proxy_set_header Connection "";
+            }
+            {{- end }}
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+{{ include "gatana.podLabels" . | indent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      {{- include "gatana.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-gateway
+      containers:
+        - name: nginx
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy | default .Values.images.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,98 @@
+{{- if .Values.gatewayApi.enabled }}
+{{- /*
+  Gateway API alternative to the classic Ingress. When enabled, an HTTPRoute
+  is created that targets the in-cluster nginx gateway Service. Tenants are
+  served from `<tenantId>.<baseDomain>`; both the apex and the wildcard are
+  matched so the frontend can perform the apex→tenant redirect.
+
+  By default this template only renders the HTTPRoute and expects you to
+  point `gatewayApi.parentRefs` at an existing Gateway (typical pattern,
+  shared across the cluster). Set `gatewayApi.gateway.create=true` to also
+  render a Gateway resource in the release namespace.
+*/ -}}
+{{- if .Values.gatewayApi.gateway.create }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+  {{- with .Values.gatewayApi.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ required "gatewayApi.gateway.gatewayClassName is required when gatewayApi.gateway.create=true" .Values.gatewayApi.gateway.gatewayClassName }}
+  listeners:
+    {{- toYaml .Values.gatewayApi.gateway.listeners | nindent 4 }}
+  {{- if .Values.gatewayApi.gateway.addresses }}
+  addresses:
+    {{- toYaml .Values.gatewayApi.gateway.addresses | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+  {{- with .Values.gatewayApi.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- if .Values.gatewayApi.gateway.create }}
+    - name: {{ .Release.Name }}
+    {{- else }}
+    {{- if not .Values.gatewayApi.parentRefs }}
+    {{- fail "gatewayApi.parentRefs must be set when gatewayApi.gateway.create=false" }}
+    {{- end }}
+    {{- toYaml .Values.gatewayApi.parentRefs | nindent 4 }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.global.baseDomain | quote }}
+    - "*.{{ .Values.global.baseDomain }}"
+  rules:
+    - backendRefs:
+        - name: {{ .Release.Name }}-gateway
+          port: 80
+{{- if .Values.gatewayApi.httpsRedirect.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-https-redirect
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "gatana.labels" . | indent 4 }}
+  {{- with .Values.gatewayApi.httpsRedirect.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- if .Values.gatewayApi.httpsRedirect.parentRefs }}
+    {{- toYaml .Values.gatewayApi.httpsRedirect.parentRefs | nindent 4 }}
+    {{- else if .Values.gatewayApi.gateway.create }}
+    - name: {{ .Release.Name }}
+      {{- with .Values.gatewayApi.httpsRedirect.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+    {{- else }}
+    {{- fail "gatewayApi.httpsRedirect.parentRefs must be set when gatewayApi.httpsRedirect.enabled=true and gatewayApi.gateway.create=false" }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.global.baseDomain | quote }}
+    - "*.{{ .Values.global.baseDomain }}"
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: {{ .Values.gatewayApi.httpsRedirect.statusCode | default 301 }}
+{{- end }}
+{{- end }}

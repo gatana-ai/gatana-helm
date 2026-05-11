@@ -1,0 +1,304 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Gatana on-premise Helm values
+# ──────────────────────────────────────────────────────────────────────────────
+# This chart deploys a single-tenant Gatana installation suitable for GKE
+# with workload identity, Cloud SQL Postgres, and a GCS bucket for files.
+#
+# Required overrides:
+#   - global.baseDomain
+#   - global.tenantId
+#   - postgres.host, postgres.user, postgres.password (or existingSecret)
+#   - storage.filesBucket, storage.functionsBucket
+#   - serviceAccount.workloads.gkeAuthMethod  (skip|gke-native|workload-identity|static-json)
+#   - serviceAccount.workloads.{native|wif|staticJson} as appropriate (see below)
+#   - workloadNamespace
+#   - imagePullSecret (name of an in-cluster Secret of type docker-registry that has
+#                      pull access to ghcr.io/gatana/*)
+#   - licenseKey
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  env: 'prod'
+  # The base domain. Tenants are served from `<tenantId>.<baseDomain>` (the
+  # tenant is always the leftmost subdomain). A wildcard DNS record + wildcard
+  # TLS cert for `*.<baseDomain>` is required.
+  baseDomain: gatana.example.com
+  # The single tenant for this install. Visitors hitting the bare baseDomain
+  # are redirected to `<tenantId>.<baseDomain>`. Lower-case alphanumeric +
+  # dashes only.
+  tenantId: app
+# Each image has its own tag. A blank tag will cause the chart
+# to refuse to render — pin or roll back individual components by overriding
+# `images.<component>.tag` at install time.
+images:
+  registry: THE_REGISTRY_URL_HERE_PROVIDED_BY_YOUR_GATANA_CONTACT
+  pullPolicy: IfNotPresent
+  backend:
+    repository: gatana
+    tag: "v1.20.47"
+  dbMigrations:
+    repository: gatana-db-migration
+    tag: "v1.20.47" # mirrors backend
+  frontend:
+    repository: gatana-frontend
+    tag: "v1.19.29"
+  docs:
+    repository: gatana-docs
+    tag: "v1.13.8"
+  vscode:
+    repository: vscode
+    tag: "1.0.0"
+  webFetcher:
+    repository: gatana-web-fetcher
+    tag: "v1.14.0"
+  embeddingService:
+    repository: gatana-embedding-service
+    tag: "v1.15.1"
+  mcpServerProxy:
+    repository: mcp-base
+    tag: "v1.14.4"
+  hostedMcpServerNodeJs:
+    repository: mcp-hosted
+    tag: "v1.14.0"
+# Optional: name of a docker-registry secret in the release namespace.
+# Leave empty to skip (the default GHCR images are public).
+imagePullSecret: ""
+workloadNamespace: gatana-workloads
+workloads: # Optional: scheduling controls for spawned MCP server pods.
+  # RuntimeClass to apply to spawned MCP server pods (e.g. "kata", "gvisor").
+  # Leave empty to use the cluster default.
+  runtimeClassName: ""
+  # Node label key used as a node-affinity requirement for spawned MCP pods
+  # (e.g. "extensions.talos.dev/kata-containers"). Leave empty to disable.
+  nodeAffinityLabel: ""
+  enableStopIdleServers: false # Set true to enable automatic stopping of idle servers after a configurable timeout. Normally not used in on-prem installs.
+# Optional: GCP project, only used when running on GKE with Workload Identity
+# or GCP KMS. Leave empty for non-GCP installs.
+gcp:
+  projectId: ""
+# License key issued by Gatana. Required for production use.
+licenseKey: ""
+# ──────────────────────────────────────────────────────────────────────────────
+# Database
+# ──────────────────────────────────────────────────────────────────────────────
+postgres:
+  host: "" # e.g. 10.0.0.5  (Cloud SQL private IP)
+  port: 5432
+  database: gatana
+  user: gatana
+  password: "" # set OR provide existingSecret with key 'password'
+  existingSecret: "" # optional: name of a Secret with key 'password'
+  useSsl: true # set true to connect to Postgres over SSL.
+  sslCa: "" # optional: PEM CA cert (public)
+  verifyHost: true # whether to verify the hostname on the Postgres SSL cert. Defaults to true; set to false to disable hostname verification (not recommended).
+# ──────────────────────────────────────────────────────────────────────────────
+# Object storage (GCS)
+# ──────────────────────────────────────────────────────────────────────────────
+storage:
+  filesBucket: "" # e.g. gatana-files
+  functionsBucket: "" # e.g. gatana-functions
+# ──────────────────────────────────────────────────────────────────────────────
+# Encryption
+# ──────────────────────────────────────────────────────────────────────────────
+kms:
+  # 'none' (default) stores customer-supplied credentials in plaintext in the DB.
+  # Set to 'gcp' and provide kms.gcpKeyId for envelope encryption with KMS.
+  provider: none
+  gcpKeyId: ""
+# ──────────────────────────────────────────────────────────────────────────────
+# Email (optional). When omitted, password-reset and invite emails are disabled
+# and the operator must hand out the magic links printed in backend logs.
+# ──────────────────────────────────────────────────────────────────────────────
+email:
+  provider: disabled # 'disabled' | 'smtp' | 'ses'
+  from: ""
+  smtp:
+    host: ""
+    port: 587
+    secure: false
+    user: ""
+    password: ""
+    passwordSecret: ""
+    passwordSecretKey: ""
+  ses:
+    region: ""
+    awsAccessKeyId: ""
+    awsSecretAccessKey: ""
+# ──────────────────────────────────────────────────────────────────────────────
+# Service account / Workload Identity
+# ──────────────────────────────────────────────────────────────────────────────
+serviceAccount:
+  backend:
+    # Needs: "Storage Object Admin" on buckets
+    # If kms.provider is gcp: KMS Encrypter/Decrypter on the KMS key 
+    name: gatana-backend
+    gkeAuthMethod: "skip" # "skip" | "workload-identity" | "gke-native" | "static-json"
+    native:
+      gkeServiceAccountName: "" # e.g. gatana-backend@my-project.iam.gserviceaccount.com
+    wif:
+      credentialsConfig: ""
+    staticJson:
+      credentials: "" # Static JSON credentials for the GKE Service Account. Only used when gkeAuthMethod is "static-json".
+      credentialsSecret: "" # Kubernetes Secret with key "credentials.json"
+  workloads:
+    # Needs: "Storage Object Reader" on buckets
+    # If kms.provider is gcp: KMS Encrypter/Decrypter on the KMS key 
+    # WARNING: gke-native is NOT RECOMMENDED for the workload SA if you plan on running untrusted workloads, 
+    # as it requires providing the token to the entire pod, instead of just  the init containers which download from GCS.
+    name: gatana-workload
+    gkeAuthMethod: "skip" # "skip" | "workload-identity" | "gke-native" | "static-json"
+    native:
+      gkeServiceAccountName: "" # e.g. gatana-workloads@my-project.iam.gserviceaccount.com
+    wif:
+      credentialsConfig: ""
+    staticJson:
+      credentials: "" # Static JSON credentials for the GKE Service Account. Only used when gkeAuthMethod is "static-json".
+      credentialsSecret: "" # Kubernetes Secret with key "credentials.json"
+# ──────────────────────────────────────────────────────────────────────────────
+# Component sizing / replicas
+# ──────────────────────────────────────────────────────────────────────────────
+backend:
+  replicas: 1
+  resources:
+    requests: {memory: "512Mi", cpu: "100m"}
+    limits: {memory: "1Gi", cpu: "1000m"}
+  # Optional extra env vars (list of {name, value} or {name, valueFrom})
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraEnv: []
+frontend:
+  replicas: 2
+  resources:
+    requests: {memory: "32Mi", cpu: "10m"}
+    limits: {memory: "128Mi", cpu: "100m"}
+docs:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: {memory: "32Mi", cpu: "10m"}
+    limits: {memory: "128Mi", cpu: "100m"}
+vscode: # Enables: the "VS Code in the browser" for editing "runnable code" servers in the gateway
+  enabled: true
+  replicas: 1
+  resources:
+    requests: {memory: "32Mi", cpu: "10m"}
+    limits: {memory: "128Mi", cpu: "100m"}
+webFetcher: # Enables: the "web fetching" tools in the Gateway
+  replicas: 1
+  resources:
+    requests: {memory: "64Mi", cpu: "10m"}
+    limits: {memory: "256Mi", cpu: "400m"}
+embeddingService: # Optional: Enabled semantic search on compressed tool results
+  enabled: false
+  replicas: 1
+  resources:
+    requests: {memory: "1400Mi", cpu: "250m"}
+    limits: {memory: "2Gi", cpu: "2000m"}
+  # Persistent volume for cached Hugging Face model weights (model download cache).
+  persistence:
+    enabled: true
+    storageClassName: "standard-rwo" # GKE default; use "standard" for regional, "" for cluster default
+    size: "2Gi"
+gateway:
+  # Required. Single nginx pod (or more) that for single-point-of entry for HTTP requests
+  # / docs and is the target of the chart's Ingress.
+  replicas: 1
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.25-alpine"
+    pullPolicy: "" # falls back to images.pullPolicy
+  clientMaxBodySize: "50m"
+  resources:
+    requests: {memory: "32Mi", cpu: "10m"}
+    limits: {memory: "128Mi", cpu: "250m"}
+# ──────────────────────────────────────────────────────────────────────────────
+# Gateway API (alternative to Ingress)
+# ──────────────────────────────────────────────────────────────────────────────
+# When enabled, an HTTPRoute is created that targets the in-cluster nginx
+# gateway Service.
+gatewayApi:
+  enabled: false
+  # parentRefs of the HTTPRoute. Required when gateway.create is false.
+  # Each entry follows the Gateway API ParentReference schema.
+  # Example:
+  #   parentRefs:
+  #     - name: external-gateway
+  #       namespace: gateway-system
+  #       sectionName: https
+  parentRefs: []
+  gateway:
+    # If true, render a Gateway resource in this release's namespace and
+    # have the HTTPRoute attach to it. parentRefs above is then ignored.
+    create: false
+    gatewayClassName: ""
+    annotations: {}
+    # Listeners follow the Gateway API Listener schema. Customize for HTTPS,
+    # cert references, allowedRoutes, etc.
+    listeners:
+      - name: https
+        port: 443
+        protocol: HTTPS
+        allowedRoutes:
+          namespaces:
+            from: Same
+      - name: http
+        port: 80
+        protocol: HTTP
+        allowedRoutes:
+          namespaces:
+            from: Same
+    addresses: []
+  httpRoute:
+    annotations: {}
+  # Optional: HTTPRoute that 301-redirects plain HTTP traffic to
+  # HTTPS. It must attach to a parent listener that speaks HTTP (port 80).
+  httpsRedirect:
+    enabled: false
+    statusCode: 301
+    # Optional: when auto-attaching to the created Gateway, the listener
+    # section name to bind to (must exist in gateway.listeners above).
+    sectionName: "http"
+    # Explicit parentRefs. Overrides the auto-attach behavior above.
+    # Example:
+    #   parentRefs:
+    #     - name: external-gateway
+    #       namespace: gateway-system
+    #       sectionName: http
+    parentRefs: []
+    annotations: {}
+# ──────────────────────────────────────────────────────────────────────────────
+# Misc
+# ──────────────────────────────────────────────────────────────────────────────
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+# ──────────────────────────────────────────────────────────────────────────────
+# Network policy
+# ──────────────────────────────────────────────────────────────────────────────
+networkPolicy:
+  # Set true to render the networking.k8s.io/v1/NetworkPolicy resources.
+  enabled: false
+  # CIDRs treated as "internal" for the purposes of the world/internet egress
+  # rule. Egress to anything *outside* these ranges is allowed; egress to
+  # anything *inside* them is denied. Make sure this list covers your cluster
+  # pod and service CIDRs as well as any private LB / API server ranges.
+  # Defaults are RFC1918.
+  internalCidrs:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+  # Optional CIDRs of the Kubernetes API server. When set, the main namespace
+  # is allowed to reach these on TCP/443. Leave empty if the API server is
+  # already covered by the internet egress rule (i.e. it has a public IP).
+  apiServerCidrs: []
+# ──────────────────────────────────────────────────────────────────────────────
+# Prometheus
+# ──────────────────────────────────────────────────────────────────────────────
+prometheusMetrics:
+  # Enables: displaying CPU + Memory usage for workloads in the UI
+  enabled: false
+  prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  gcpCloudMonitoring:
+    enable: false # If you are using GKE built-in monitoring with Cloud Monitoring, set this to true
+    serviceAccountName: "prometheus-frontend"
+    gkeServiceAccountName: "" # e.g. gke-prometheus-frontend@my-project.iam.gserviceaccount.com
