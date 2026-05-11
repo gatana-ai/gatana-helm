@@ -15,7 +15,7 @@ kubectl -n gatana create secret docker-registry gatana-registry \
 wget https://raw.githubusercontent.com/gatana-ai/gatana-helm/refs/heads/main/values.yaml
 
 # 4. Adapts values.yaml to your scenario, and install the chart:
-helm install gatana oci://ghcr.io/gatana/charts/gatana \
+helm install gatana oci://ghcr.io/gatana-ai/charts/gatana \
   --namespace gatana \
   -f values.yaml
 
