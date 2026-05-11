@@ -11,3 +11,5 @@ sources:
 maintainers:
   - name: Gatana
     email: support@gatana.ai
+annotations:
+  org.opencontainers.image.source: https://github.com/gatana-ai/gatana-helm
