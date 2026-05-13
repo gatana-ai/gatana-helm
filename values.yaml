@@ -41,7 +41,7 @@ images:
     tag: "v1.21.4" # mirrors backend
   frontend:
     repository: gatana-frontend
-    tag: "v1.20.3"
+    tag: "v1.20.4"
   docs:
     repository: gatana-docs
     tag: "v1.13.8"
