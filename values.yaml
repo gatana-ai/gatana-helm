@@ -35,13 +35,13 @@ images:
   pullPolicy: IfNotPresent
   backend:
     repository: gatana
-    tag: "v1.22.5"
+    tag: "v1.22.6"
   dbMigrations:
     repository: gatana-db-migration
-    tag: "v1.22.5" # mirrors backend
+    tag: "v1.22.6" # mirrors backend
   frontend:
     repository: gatana-frontend
-    tag: "v1.21.1"
+    tag: "v1.21.2"
   docs:
     repository: gatana-docs
     tag: "v1.13.12"
