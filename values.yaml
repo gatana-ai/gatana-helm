@@ -35,16 +35,16 @@ images:
   pullPolicy: IfNotPresent
   backend:
     repository: gatana
-    tag: "v1.36.2"
+    tag: "v1.37.2"
   dbMigrations:
     repository: gatana-db-migration
-    tag: "v1.36.2" # mirrors backend
+    tag: "v1.37.2" # mirrors backend
   frontend:
     repository: gatana-frontend
-    tag: "v1.34.2"
+    tag: "v1.35.2"
   docs:
     repository: gatana-docs
-    tag: "v1.13.31"
+    tag: "v1.13.33"
   vscode:
     repository: vscode
     tag: "1.0.0"
@@ -59,7 +59,7 @@ images:
     tag: "v1.14.4"
   hostedMcpServerNodeJs:
     repository: mcp-hosted
-    tag: "v1.14.0"
+    tag: "v1.14.1"
 # Optional: name of a docker-registry secret in the release namespace.
 # Leave empty to skip (the default GHCR images are public).
 imagePullSecret: ""
