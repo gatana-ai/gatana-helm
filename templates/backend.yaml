@@ -193,6 +193,16 @@ spec:
             - name: WORKLOAD_NODE_AFFINITY_LABEL
               value: {{ .Values.workloads.nodeAffinityLabel | quote }}
             {{- end }}
+            {{- if .Values.workloads.storageClassName }}
+            - name: WORKLOAD_STORAGE_CLASS_NAME
+              value: {{ .Values.workloads.storageClassName | quote }}
+            - name: WORKLOAD_STORAGE_SIZE
+              value: {{ .Values.workloads.storageSize | default "2Gi" | quote }}
+            {{- end }}
+            {{- if .Values.workloads.tailscaleImage }}
+            - name: WORKLOAD_TAILSCALE_IMAGE
+              value: {{ .Values.workloads.tailscaleImage | quote }}
+            {{- end }}
             {{- if eq .Values.workloads.enableStopIdleServers false }}
             - name: ENABLE_STOP_IDLE_SERVERS
               value: "false"
@@ -210,6 +220,34 @@ spec:
             {{- if .Values.embeddingService.enabled }}
             - name: EMBEDDING_SERVICE_URL
               value: "http://{{ .Release.Name }}-embedding-service.{{ .Release.Namespace }}.svc.cluster.local"
+            {{- end }}
+            {{- if .Values.assistant.enabled }}
+            - name: ASSISTANT_ENABLED
+              value: "true"
+            {{- end }}
+            {{- $assistantLlm := .Values.assistant.llm }}
+            {{- $assistantLlmKey := or $assistantLlm.apiKey $assistantLlm.apiKeySecret }}
+            {{- if or $assistantLlm.baseUrl $assistantLlm.model $assistantLlmKey }}
+            {{- if not .Values.assistant.enabled }}
+            {{- fail "assistant.llm is set but assistant.enabled is false. Enable the assistant or remove the llm values." }}
+            {{- end }}
+            {{- if not (and $assistantLlm.baseUrl $assistantLlm.model $assistantLlmKey) }}
+            {{- fail "assistant.llm needs baseUrl, model, and an API key (apiKey or apiKeySecret) together. Set all three or none: the backend reads a partial set as no platform model, without an error." }}
+            {{- end }}
+            - name: ASSISTANT_LLM_BASE_URL
+              value: {{ $assistantLlm.baseUrl | quote }}
+            - name: ASSISTANT_LLM_MODEL
+              value: {{ $assistantLlm.model | quote }}
+            - name: ASSISTANT_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if $assistantLlm.apiKeySecret }}
+                  name: {{ $assistantLlm.apiKeySecret | quote }}
+                  key: {{ required "assistant.llm.apiKeySecretKey is required when apiKeySecret is set" $assistantLlm.apiKeySecretKey | quote }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-secrets
+                  key: assistantLlmApiKey
+                  {{- end }}
             {{- end }}
             - name: FILES_STORAGE_BUCKET
               value: {{ .Values.storage.filesBucket | quote }}

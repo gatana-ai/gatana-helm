@@ -71,6 +71,22 @@ workloads: # Optional: scheduling controls for spawned MCP server pods.
   # Node label key used as a node-affinity requirement for spawned MCP pods
   # (e.g. "extensions.talos.dev/kata-containers"). Leave empty to disable.
   nodeAffinityLabel: ""
+  # StorageClass backing persistent volumes for MCP servers that opt into
+  # storage. Leave empty to turn the feature off: the toggle then stays hidden
+  # in the UI. There is no safe default, so set it only when you have a class
+  # fit for an untrusted workload, and one that reclaims the volume when the
+  # claim is deleted. A class that retains leaks one volume per deleted server.
+  storageClassName: ""
+  # Size of the volume each opted-in server receives. Only used when
+  # storageClassName is set. The class must allow this size.
+  storageSize: "2Gi"
+  # Tailscale sidecar image, which gives an MCP server egress to its
+  # organization's tailnet. Leave empty to turn the feature off: the toggle then
+  # stays hidden in the UI. Set it only on a cluster whose admission policy lets
+  # a container named "tailscale" hold the NET_ADMIN capability, which the
+  # sidecar needs to bring up its tunnel. Elsewhere every server that opts in
+  # fails to start.
+  tailscaleImage: ""
   enableStopIdleServers: false # Set true to enable automatic stopping of idle servers after a configurable timeout. Normally not used in on-prem installs.
 # Optional: GCP project, only used when running on GKE with Workload Identity
 # or GCP KMS. Leave empty for non-GCP installs.
@@ -124,6 +140,24 @@ email:
     region: ""
     awsAccessKeyId: ""
     awsSecretAccessKey: ""
+# ──────────────────────────────────────────────────────────────────────────────
+# AI assistant (optional). When disabled, the assistant does not appear in the
+# UI at all.
+# ──────────────────────────────────────────────────────────────────────────────
+assistant:
+  # Set true to offer the in-app AI assistant. On its own this lets each
+  # organization bring its own OpenAI-compatible endpoint; fill in llm below to
+  # also provide a platform-wide default model.
+  enabled: false
+  # Platform default model for organizations that do not bring their own
+  # endpoint. Set all three values or none. The chart refuses a partial set,
+  # because the backend silently reads it as "no platform model".
+  llm:
+    baseUrl: "" # OpenAI-compatible endpoint, e.g. https://api.example.com/v1
+    model: "" # model name as the endpoint knows it
+    apiKey: "" # set OR provide apiKeySecret/apiKeySecretKey
+    apiKeySecret: "" # optional: name of an existing Secret holding the key
+    apiKeySecretKey: "" # key within apiKeySecret; required when it is set
 # ──────────────────────────────────────────────────────────────────────────────
 # Service account / Workload Identity
 # ──────────────────────────────────────────────────────────────────────────────
