@@ -146,7 +146,32 @@ spec:
               value: {{ .Values.global.tenantId | quote }}
             - name: KMS_PROVIDER
               value: {{ .Values.kms.provider | quote }}
-            {{- if .Values.kms.gcpKeyId }}
+            {{- if eq .Values.kms.provider "aws" }}
+            {{- with .Values.kms.aws }}
+            - name: CUSTOMER_DATA_KMS_KEY_ID
+              value: {{ required "kms.aws.keyId is required when kms.provider=aws" .keyId | quote }}
+            {{- if .region }}
+            - name: AWS_KMS_REGION
+              value: {{ .region | quote }}
+            {{- end }}
+            {{- if .endpoint }}
+            - name: AWS_KMS_ENDPOINT
+              value: {{ .endpoint | quote }}
+            {{- end }}
+            {{- if .credentialsSecret }}
+            - name: AWS_KMS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .credentialsSecret | quote }}
+                  key: accessKeyId
+            - name: AWS_KMS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .credentialsSecret | quote }}
+                  key: secretAccessKey
+            {{- end }}
+            {{- end }}
+            {{- else if .Values.kms.gcpKeyId }}
             - name: CUSTOMER_DATA_KMS_KEY_ID
               value: {{ .Values.kms.gcpKeyId | quote }}
             {{- end }}
@@ -253,6 +278,36 @@ spec:
               value: {{ .Values.storage.filesBucket | quote }}
             - name: FUNCTIONS_STORAGE_BUCKET
               value: {{ .Values.storage.functionsBucket | quote }}
+            - name: OBJECT_STORAGE_PROVIDER
+              value: {{ default "gcs" .Values.storage.provider | quote }}
+            {{- if eq (default "gcs" .Values.storage.provider) "s3" }}
+            {{- with .Values.storage.s3 }}
+            {{- if .region }}
+            - name: S3_REGION
+              value: {{ .region | quote }}
+            {{- end }}
+            {{- if .endpoint }}
+            - name: S3_ENDPOINT
+              value: {{ .endpoint | quote }}
+            {{- end }}
+            {{- if .credentialsSecret }}
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .credentialsSecret | quote }}
+                  key: accessKeyId
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .credentialsSecret | quote }}
+                  key: secretAccessKey
+            {{- end }}
+            {{- if .workloadCredentialsSecret }}
+            - name: WORKLOAD_S3_SECRET_NAME
+              value: {{ .workloadCredentialsSecret | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: EMAIL_PROVIDER
               value: {{ .Values.email.provider | quote }}
             {{- if eq .Values.email.provider "smtp" }}
@@ -285,9 +340,19 @@ spec:
             {{- if eq .Values.email.provider "ses" }}
             - name: SES_REGION
               value: {{ .Values.email.ses.region | quote }}
+            {{- /*
+              Both keys are optional. Leave them empty on EKS Pod Identity (or IRSA,
+              or an instance role) so the SDK credential chain reaches the ambient
+              provider. Emit neither variable in that case: an AWS_ACCESS_KEY_ID set
+              to the empty string is still a set variable, which the shared-config
+              and CLI credential paths read as a broken key rather than as absent.
+            */}}
+            {{- if or (and .Values.email.ses.awsAccessKeyId (not .Values.email.ses.awsSecretAccessKey)) (and .Values.email.ses.awsSecretAccessKey (not .Values.email.ses.awsAccessKeyId)) }}
+            {{- fail "email.ses.awsAccessKeyId and email.ses.awsSecretAccessKey must be set together. Set both for static keys, or leave both empty to use EKS Pod Identity, IRSA, or an instance role." }}
+            {{- end }}
+            {{- if .Values.email.ses.awsAccessKeyId }}
             - name: AWS_ACCESS_KEY_ID
               value: {{ .Values.email.ses.awsAccessKeyId | quote }}
-            {{- if .Values.email.ses.awsSecretAccessKey }}
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

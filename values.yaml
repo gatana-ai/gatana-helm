@@ -108,19 +108,47 @@ postgres:
   sslCa: "" # optional: PEM CA cert (public)
   verifyHost: true # whether to verify the hostname on the Postgres SSL cert. Defaults to true; set to false to disable hostname verification (not recommended).
 # ──────────────────────────────────────────────────────────────────────────────
-# Object storage (GCS)
+# Object storage
 # ──────────────────────────────────────────────────────────────────────────────
 storage:
+  # 'gcs' (default) or 's3'. S3 covers AWS and S3-compatible stores (Ceph RGW, MinIO, ...).
+  provider: gcs
   filesBucket: "" # e.g. gatana-files
   functionsBucket: "" # e.g. gatana-functions
+  # Only read when provider is 's3'.
+  s3:
+    region: "" # e.g. eu-central-1
+    endpoint: "" # custom endpoint for an S3-compatible store; empty means AWS S3
+    # Name of a Secret (keys: accessKeyId, secretAccessKey) for the backend's S3 client.
+    # Empty relies on ambient credentials (IRSA, node role).
+    credentialsSecret: ""
+    # Name of a Secret in the workloads namespace holding AWS_ACCESS_KEY_ID /
+    # AWS_SECRET_ACCESS_KEY for the file-download init containers. Empty relies on
+    # ambient credentials.
+    workloadCredentialsSecret: ""
 # ──────────────────────────────────────────────────────────────────────────────
 # Encryption
 # ──────────────────────────────────────────────────────────────────────────────
 kms:
   # 'none' (default) stores customer-supplied credentials in plaintext in the DB.
-  # Set to 'gcp' and provide kms.gcpKeyId for envelope encryption with KMS.
+  # For envelope encryption with a managed key, set 'gcp' and provide kms.gcpKeyId,
+  # or 'aws' and provide kms.aws.keyId.
   provider: none
   gcpKeyId: ""
+  # Only read when provider is 'aws'.
+  aws:
+    # Key ARN, 'alias/<name>', or bare key ID. The backend needs
+    # kms:Encrypt and kms:Decrypt on it.
+    keyId: ""
+    # Region holding the key. A full ARN names its own region, so this is only
+    # needed for an alias or a bare key ID.
+    region: ""
+    # Custom KMS endpoint (a VPC endpoint, LocalStack, ...). Empty means AWS KMS.
+    endpoint: ""
+    # Name of a Secret (keys: accessKeyId, secretAccessKey) for the backend's KMS
+    # client. Empty relies on ambient credentials (IRSA, EKS Pod Identity, node
+    # role). Set it when the ambient keys belong to something else, such as SES.
+    credentialsSecret: ""
 # ──────────────────────────────────────────────────────────────────────────────
 # Email (optional). When omitted, password-reset and invite emails are disabled
 # and the operator must hand out the magic links printed in backend logs.
@@ -138,6 +166,10 @@ email:
     passwordSecretKey: ""
   ses:
     region: ""
+    # Static keys for the SES client. Set both or neither: the chart refuses a
+    # partial pair. Leave both empty on EKS Pod Identity, IRSA, or an instance
+    # role. The chart then sets no AWS_* credential variables at all, so the
+    # SDK credential chain falls through to the ambient provider.
     awsAccessKeyId: ""
     awsSecretAccessKey: ""
 # ──────────────────────────────────────────────────────────────────────────────
