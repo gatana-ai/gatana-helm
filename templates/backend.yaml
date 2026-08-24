@@ -144,6 +144,17 @@ spec:
               value: {{ .Values.global.baseDomain | quote }}
             - name: FALLBACK_TENANT
               value: {{ .Values.global.tenantId | quote }}
+            {{- if .Values.superAdmins }}
+            {{- $pairs := list }}
+            {{- range .Values.superAdmins }}
+            {{- if or (not (contains "@" .)) (contains ":" .) (contains "," .) }}
+            {{- fail (printf "superAdmins entries must be plain email addresses (the chart pairs them with global.tenantId), got %q" .) }}
+            {{- end }}
+            {{- $pairs = append $pairs (printf "%s:%s" $.Values.global.tenantId .) }}
+            {{- end }}
+            - name: SUPERADMIN_USERS
+              value: {{ join "," $pairs | quote }}
+            {{- end }}
             - name: KMS_PROVIDER
               value: {{ .Values.kms.provider | quote }}
             {{- if eq .Values.kms.provider "aws" }}

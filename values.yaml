@@ -94,6 +94,13 @@ gcp:
   projectId: ""
 # License key issued by Gatana. Required for production use.
 licenseKey: ""
+# Emails granted the super-administrator flag at every backend start (the
+# platform-operations plane, above the tenant's own owner role). The chart
+# pairs each email with global.tenantId. Grant-only: removing an entry, or the
+# whole list, revokes nothing — revoking the flag is a direct database update.
+# A listed user that has not signed up yet is skipped with a warning and picked
+# up on a later start.
+superAdmins: []
 # ──────────────────────────────────────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────────────────────────────────────
