@@ -198,6 +198,15 @@ assistant:
     apiKeySecret: "" # optional: name of an existing Secret holding the key
     apiKeySecretKey: "" # key within apiKeySecret; required when it is set
 # ──────────────────────────────────────────────────────────────────────────────
+# Glama MCP registry (optional). With a key, the "add server" registry search
+# also shows remote servers listed on glama.ai next to the official MCP
+# registry. Without one, only the official registry is searched.
+# ──────────────────────────────────────────────────────────────────────────────
+glama:
+  apiKey: "" # set OR provide apiKeySecret/apiKeySecretKey
+  apiKeySecret: "" # optional: name of an existing Secret holding the key
+  apiKeySecretKey: "" # key within apiKeySecret; required when it is set
+# ──────────────────────────────────────────────────────────────────────────────
 # Service account / Workload Identity
 # ──────────────────────────────────────────────────────────────────────────────
 serviceAccount:

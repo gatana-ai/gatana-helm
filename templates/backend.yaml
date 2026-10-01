@@ -285,6 +285,20 @@ spec:
                   key: assistantLlmApiKey
                   {{- end }}
             {{- end }}
+            {{- /* Optional. Without a key the backend searches the official MCP registry only. */}}
+            {{- $glama := .Values.glama }}
+            {{- if or $glama.apiKey $glama.apiKeySecret }}
+            - name: GLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if $glama.apiKeySecret }}
+                  name: {{ $glama.apiKeySecret | quote }}
+                  key: {{ required "glama.apiKeySecretKey is required when apiKeySecret is set" $glama.apiKeySecretKey | quote }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-secrets
+                  key: glamaApiKey
+                  {{- end }}
+            {{- end }}
             - name: FILES_STORAGE_BUCKET
               value: {{ .Values.storage.filesBucket | quote }}
             - name: FUNCTIONS_STORAGE_BUCKET
