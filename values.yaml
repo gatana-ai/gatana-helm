@@ -101,6 +101,10 @@ licenseKey: ""
 # A listed user that has not signed up yet is skipped with a warning and picked
 # up on a later start.
 superAdmins: []
+# Audit retention in days: 0 keeps all records; otherwise, use at least 30.
+# Super-administrators can override this in Global Settings.
+auditLogs:
+  maxAgeDays: 0
 # ──────────────────────────────────────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────────────────────────────────────
