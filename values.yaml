@@ -104,7 +104,7 @@ superAdmins: []
 # Audit retention in days: 0 keeps all records; otherwise, use at least 30.
 # Super-administrators can override this in Global Settings.
 auditLogs:
-  maxAgeDays: 0
+  maxAgeDays: 180
 # ──────────────────────────────────────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────────────────────────────────────
