@@ -45,53 +45,6 @@ spec:
         {{- with .Values.backend.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      initContainers:
-        - name: db-migration
-          image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "dbMigrations") }}
-          imagePullPolicy: {{ .Values.images.pullPolicy }}
-          securityContext:
-            runAsNonRoot: true
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities: { drop: [ALL] }
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-          env:
-            - name: PGHOST
-              value: {{ .Values.postgres.host | quote }}
-            - name: PGPORT
-              value: {{ .Values.postgres.port | quote }}
-            - name: PGDATABASE
-              value: {{ .Values.postgres.database | quote }}
-            - name: PGUSER
-              value: {{ .Values.postgres.user | quote }}
-            - name: PGSSLMODE
-              {{- if and .Values.postgres.useSsl .Values.postgres.sslCa }}
-              value: {{ ternary "verify-full" "verify-ca" .Values.postgres.verifyHost | quote }}
-              {{- else if .Values.postgres.useSsl }}
-              value: "require"
-              {{- else }}
-              value: "disable"
-              {{- end }}
-            {{- if .Values.postgres.sslCa }}
-            - name: POSTGRES_CA
-              value: {{ .Values.postgres.sslCa | quote }}
-            {{- end }}
-            - name: PGSCHEMA
-              value: "public"
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  {{- if .Values.postgres.existingSecret }}
-                  name: {{ .Values.postgres.existingSecret }}
-                  {{- else }}
-                  name: {{ .Release.Name }}-secrets
-                  {{- end }}
-                  key: {{ if .Values.postgres.existingSecret }}password{{ else }}postgresPassword{{ end }}
-          resources:
-            requests: { memory: "64Mi", cpu: "50m" }
-            limits:   { memory: "256Mi", cpu: "500m" }
       containers:
         - name: api
           image: {{ include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" "backend") }}
@@ -411,8 +364,13 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          # Database migration can take many minutes.
+          # With X-Gatana-Probe: live, health checks return HTTP 200 during migration
+          # to prevent startup and liveness probe restarts. Readiness checks omit
+          # the header and return HTTP 503 until ready. This keeps traffic away.
+          # Older backends ignore the header.
           startupProbe:
-            httpGet: { path: /api/v1/health, port: 3500 }
+            httpGet: { path: /api/v1/health, port: 3500, httpHeaders: [{ name: X-Gatana-Probe, value: live }] }
             initialDelaySeconds: 1
             periodSeconds: 1
             failureThreshold: 60
@@ -421,7 +379,7 @@ spec:
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
-            httpGet: { path: /api/v1/health, port: 3500 }
+            httpGet: { path: /api/v1/health, port: 3500, httpHeaders: [{ name: X-Gatana-Probe, value: live }] }
             periodSeconds: 30
             failureThreshold: 3
 ---
