@@ -37,10 +37,10 @@ images:
   # The chart has no separate migration step.
   backend:
     repository: gatana
-    tag: "v1.47.4"
+    tag: "v1.47.5"
   frontend:
     repository: gatana-frontend
-    tag: "v1.46.3"
+    tag: "v1.46.4"
   docs:
     repository: gatana-docs
     tag: "v1.13.57"
