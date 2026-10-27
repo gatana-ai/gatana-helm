@@ -20,6 +20,9 @@ spec:
         app.kubernetes.io/component: backend
     spec:
       serviceAccountName: {{ .Values.serviceAccount.backend.name }}
+      # Must be longer than the preStop sleep plus the backend's shutdown deadline
+      # (SHUTDOWN_DEADLINE_MS). The period starts when preStop starts.
+      terminationGracePeriodSeconds: 60
       {{- include "gatana.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -364,6 +367,16 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          # Kubernetes starts preStop at the same time as it removes the pod from the
+          # Service endpoints. The gateway keeps a keepalive pool and /mcp streams
+          # toward this pod, and conntrack continues to route them here for some
+          # seconds. The backend stops accepting connections on SIGTERM, which comes
+          # when preStop returns, so the sleep keeps it serving until that traffic stops.
+          # This is an exec sleep because the sleep action needs Kubernetes 1.30 or later.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "15"]
           # Database migration can take many minutes.
           # With X-Gatana-Probe: live, health checks return HTTP 200 during migration
           # to prevent startup and liveness probe restarts. Readiness checks omit

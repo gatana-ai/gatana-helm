@@ -43,6 +43,7 @@ spec:
             - { name: tmp,   mountPath: /tmp }
           resources:
             {{- toYaml .Values.docs.resources | nindent 12 }}
+          {{- include "gatana.nginxPreStop" 5 | nindent 10 }}
           readinessProbe:
             httpGet: { path: /, port: 8080 }
             periodSeconds: 5

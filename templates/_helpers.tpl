@@ -46,6 +46,25 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
+preStop for an nginx container behind a Service. Kubernetes starts preStop at
+the same time as it removes the pod from the Service endpoints, and that change
+needs some seconds to reach every node and proxy. nginx continues to serve
+during the sleep. When preStop returns, the runtime sends the image's stop
+signal. Every nginx image in this chart sets SIGQUIT, which tells nginx to
+complete its open requests before it stops.
+Do not add 'nginx -s quit' and a wait loop here. The loop cannot end before
+the container does, so every stop then records a FailedPreStopHook warning.
+Usage (the argument is the drain time in seconds):
+  {{- include "gatana.nginxPreStop" 5 | nindent 10 }}
+*/}}
+{{- define "gatana.nginxPreStop" -}}
+lifecycle:
+  preStop:
+    exec:
+      command: ["sleep", "{{ . }}"]
+{{- end -}}
+
+{{/*
 Postgres password env var. Either inline value or secretKeyRef.
 */}}
 {{- define "gatana.postgresPasswordEnv" -}}
