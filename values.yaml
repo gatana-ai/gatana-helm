@@ -287,7 +287,7 @@ embeddingService: # Optional: Enabled semantic search on compressed tool results
 gateway:
   # Required. Single nginx pod (or more) that for single-point-of entry for HTTP requests
   # / docs and is the target of the chart's Ingress.
-  replicas: 1
+  replicas: 2
   image:
     repository: nginxinc/nginx-unprivileged
     tag: "1.25-alpine"
