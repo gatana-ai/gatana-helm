@@ -32,6 +32,33 @@ Usage: include "gatana.image" (dict "Values" .Values "Chart" .Chart "component" 
 {{- end -}}
 
 {{/*
+Return "true" to run frontend pods and route web app requests to them; otherwise return "".
+In auto mode, keep the frontend for backends before v1.47.7 and tags without a version.
+Reject false for older backend versions because they cannot serve the web app.
+Usage: {{- if include "gatana.frontendEnabled" . }}
+*/}}
+{{- define "gatana.frontendEnabled" -}}
+{{- $frontendSetting := "auto" -}}
+{{- if hasKey .Values.frontend "enabled" -}}
+{{- $frontendSetting = toString .Values.frontend.enabled -}}
+{{- end -}}
+{{- $backendTag := toString .Values.images.backend.tag -}}
+{{- $isVersionTag := regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+" $backendTag -}}
+{{- $backendServesWebApp := and $isVersionTag (semverCompare ">=1.47.7-0" $backendTag) -}}
+{{- if eq $frontendSetting "auto" -}}
+{{- if not $backendServesWebApp -}}true{{- end -}}
+{{- else if eq $frontendSetting "true" -}}
+true
+{{- else if eq $frontendSetting "false" -}}
+{{- if and $isVersionTag (not $backendServesWebApp) -}}
+{{- fail (printf "frontend.enabled=false requires backend v1.47.7 or later to serve the web app; images.backend.tag is %s" $backendTag) -}}
+{{- end -}}
+{{- else -}}
+{{- fail (printf "frontend.enabled must be auto, true or false; got %q" $frontendSetting) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Renders the pod-spec `imagePullSecrets:` block when .Values.imagePullSecret
 is set. Use inside a pod template's `spec:`. Outputs nothing if empty.
 Usage:

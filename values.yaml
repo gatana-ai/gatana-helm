@@ -35,6 +35,7 @@ images:
   pullPolicy: IfNotPresent
   # Requires backend v1.47.3 or later to apply database migrations at startup.
   # The chart has no separate migration step.
+  # Backend v1.47.7 and later also serve the web app. See frontend.enabled.
   backend:
     repository: gatana
     tag: "v1.47.5"
@@ -252,6 +253,12 @@ backend:
   extraVolumeMounts: []
   extraEnv: []
 frontend:
+  # Backend v1.47.7 and later can serve the web app without frontend pods.
+  # auto: Run frontend pods for backends before v1.47.7 or tags without a
+  #       version (for example, latest or a digest).
+  # true: Always run frontend pods and route web app requests to them.
+  # false: Route web app requests to the backend. Requires v1.47.7 or later.
+  enabled: auto
   replicas: 2
   resources:
     requests: {memory: "32Mi", cpu: "10m"}
