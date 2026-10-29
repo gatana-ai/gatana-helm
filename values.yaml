@@ -38,10 +38,10 @@ images:
   # Backend v1.47.7 and later also serve the web app. See frontend.enabled.
   backend:
     repository: gatana
-    tag: "v1.47.7"
+    tag: "v1.47.8"
   frontend:
     repository: gatana-frontend
-    tag: "v1.46.5"
+    tag: "v1.46.6"
   docs:
     repository: gatana-docs
     tag: "v1.13.57"
@@ -50,7 +50,7 @@ images:
     tag: "1.0.0"
   webFetcher:
     repository: gatana-web-fetcher
-    tag: "v1.14.4"
+    tag: "v1.14.5"
   embeddingService:
     repository: gatana-embedding-service
     tag: "v1.17.3"
