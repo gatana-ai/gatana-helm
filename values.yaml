@@ -8,7 +8,7 @@
 #   - global.baseDomain
 #   - global.tenantId
 #   - postgres.host, postgres.user, postgres.password (or existingSecret)
-#   - storage.filesBucket, storage.functionsBucket
+#   - storage.filesBucket, storage.functionsBucket (both, or neither to store files in the database)
 #   - serviceAccount.workloads.gkeAuthMethod  (skip|gke-native|workload-identity|static-json)
 #   - serviceAccount.workloads.{native|wif|staticJson} as appropriate (see below)
 #   - workloadNamespace
@@ -123,6 +123,8 @@ postgres:
 # ──────────────────────────────────────────────────────────────────────────────
 storage:
   # 'gcs' (default) or 's3'. S3 covers AWS and S3-compatible stores (Ceph RGW, MinIO, ...).
+  # Only used when a bucket is set. Set both buckets or neither: with neither, the backend
+  # stores files in its database (at most 16 MB each) and the container keeps no state.
   provider: gcs
   filesBucket: "" # e.g. gatana-files
   functionsBucket: "" # e.g. gatana-functions

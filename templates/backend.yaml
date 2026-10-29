@@ -263,6 +263,8 @@ spec:
               value: {{ .Values.storage.filesBucket | quote }}
             - name: FUNCTIONS_STORAGE_BUCKET
               value: {{ .Values.storage.functionsBucket | quote }}
+            {{- /* Without buckets the backend stores files in its database and refuses a provider. */}}
+            {{- if or .Values.storage.filesBucket .Values.storage.functionsBucket }}
             - name: OBJECT_STORAGE_PROVIDER
               value: {{ default "gcs" .Values.storage.provider | quote }}
             {{- if eq (default "gcs" .Values.storage.provider) "s3" }}
@@ -290,6 +292,7 @@ spec:
             {{- if .workloadCredentialsSecret }}
             - name: WORKLOAD_S3_SECRET_NAME
               value: {{ .workloadCredentialsSecret | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- end }}
