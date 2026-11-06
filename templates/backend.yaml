@@ -328,6 +328,10 @@ spec:
             {{- if eq .Values.email.provider "ses" }}
             - name: SES_REGION
               value: {{ .Values.email.ses.region | quote }}
+            {{- if .Values.email.from }}
+            - name: SES_FROM
+              value: {{ .Values.email.from | quote }}
+            {{- end }}
             {{- /*
               Both keys are optional. Leave them empty on EKS Pod Identity (or IRSA,
               or an instance role) so the SDK credential chain reaches the ambient
@@ -354,6 +358,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secrets
                   key: licenseKey
+            {{- end }}
+            {{- if .Values.optOutNoLicenseEmailShare }}
+            - name: OPTOUT_NO_LICENSE_EMAIL_SHARE
+              value: "true"
             {{- end }}
             {{- if .Values.prometheusMetrics.enabled }}
             - name: PROMETHEUS_METRICS_ENABLED

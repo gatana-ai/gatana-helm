@@ -92,14 +92,21 @@ workloads: # Optional: scheduling controls for spawned MCP server pods.
 # or GCP KMS. Leave empty for non-GCP installs.
 gcp:
   projectId: ""
-# License key issued by Gatana. Required for production use.
+# License key from Gatana. Empty: the free edition under the free self-hosting
+# terms.
 licenseKey: ""
+# Without a license key, the backend can send the email address of each
+# organization and the superAdmins below to license.gatana.ai from day 50, so
+# Gatana can offer a license. True (the default): it sends nothing. False: it
+# sends them. With a license key, this value has no effect.
+optOutNoLicenseEmailShare: true
 # Emails granted the super-administrator flag at every backend start (the
 # platform-operations plane, above the tenant's own owner role). The chart
 # pairs each email with global.tenantId. Grant-only: removing an entry, or the
 # whole list, revokes nothing — revoking the flag is a direct database update.
 # A listed user that has not signed up yet is skipped with a warning and picked
-# up on a later start.
+# up on a later start. These addresses are sent to Gatana only without a license
+# key and with optOutNoLicenseEmailShare: false.
 superAdmins: []
 # Audit retention in days: 0 keeps all records; otherwise, use at least 30.
 # Super-administrators can override this in Global Settings.
@@ -168,6 +175,8 @@ kms:
 # ──────────────────────────────────────────────────────────────────────────────
 email:
   provider: disabled # 'disabled' | 'smtp' | 'ses'
+  # Sender for smtp and ses, for example "Gatana <noreply@example.com>". Empty:
+  # Gatana <noreply@ + global.baseDomain>. With ses, AWS must accept this address.
   from: ""
   smtp:
     host: ""
