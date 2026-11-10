@@ -38,28 +38,28 @@ images:
   # Backend v1.47.7 and later also serve the web app. See frontend.enabled.
   backend:
     repository: gatana
-    tag: "v1.50.3"
+    tag: "v1.50.8"
   frontend:
     repository: gatana-frontend
     tag: "v1.47.5"
   docs:
     repository: gatana-docs
-    tag: "v1.13.61"
+    tag: "v1.13.62"
   vscode:
     repository: vscode
     tag: "1.0.0"
   webFetcher:
     repository: gatana-web-fetcher
-    tag: "v1.14.5"
+    tag: "v1.14.6"
   embeddingService:
     repository: gatana-embedding-service
-    tag: "v1.17.3"
+    tag: "v1.17.4"
   mcpServerProxy:
     repository: mcp-base
     tag: "v1.14.5"
   hostedMcpServerNodeJs:
     repository: mcp-hosted
-    tag: "v1.16.4"
+    tag: "v1.16.5"
 # Optional: name of a docker-registry secret in the release namespace.
 # Leave empty to skip (the default GHCR images are public).
 imagePullSecret: ""
