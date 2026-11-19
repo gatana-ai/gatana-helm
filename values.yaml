@@ -307,8 +307,10 @@ gateway:
   # / docs and is the target of the chart's Ingress.
   replicas: 2
   image:
-    repository: nginxinc/nginx-unprivileged
-    tag: "1.25-alpine"
+    repository: nginx/nginx-unprivileged
+    # An exact nginx version. A node pulls a tag one time, so a floating tag
+    # such as 1.31-alpine does not bring later fixes to that node.
+    tag: "1.31.9-alpine"
     pullPolicy: "" # falls back to images.pullPolicy
   clientMaxBodySize: "50m"
   resources:
